@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Мої Шахи з Ботом</title>
+    <!-- Підключаємо стилі та бібліотеки -->
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin: 10px 0;
+            text-align: center;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            max-width: 360px;
+            margin-bottom: 10px;
+        }
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e1e1e;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        select, button {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            outline: none;
+        }
+        button:active {
+            background: #444;
+        }
+        #board {
+            width: 100%;
+            max-width: 360px;
+            margin-bottom: 10px;
+        }
+        .info-panel {
+            width: 100%;
+            max-width: 360px;
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        #status {
+            font-size: 1rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stats {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        /* Підсвічування клітинок */
+        .highlight-white {
+            background-box: inset 0 0 3px 3px rgba(255, 255, 0, 0.5);
+            background-color: rgba(255, 255, 0, 0.4) !important;
+        }
+        .highlight-black {
+            background-box: inset 0 0 3px 3px rgba(255, 255, 0, 0.5);
+            background-color: rgba(255, 255, 0, 0.4) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Шахи з Ботом</h1>
+
+    <div class="controls">
+        <div class="control-row">
+            <span>Складність:</span>
+            <select id="difficulty">
+                <option value="easy">Легкий</option>
+                <option value="medium" selected>Середній</option>
+                <option value="hard">Важкий</option>
+            </select>
+        </div>
+        <div class="control-row">
+            <span>Грати за:</span>
+            <select id="player-color">
+                <option value="white" selected>Білі</option>
+                <option value="black">Чорні</option>
+            </select>
+        </div>
+        <button id="restart-btn">Нова гра</button>
+    </div>
+
+    <!-- Шахівниця -->
+    <div id="board"></div>
+
+    <div class="info-panel">
+        <div id="status">Хід білих</div>
+        <div class="stats">Кількість ходів: <span id="move-count">0</span></div>
+    </div>
+
+    <!-- Скрипти бібліотек (jQuery, ChessboardJS, ChessJS) -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+    <script>
+        var board = null;
+        var game = new Chess();
+        var moveCount = 0;
+        var playerColor = 'w'; // 'w' або 'b'
+
+        // Очищення підсвічування
+        function removeHighlights() {
+            $('#board .square-55d63').css('background', '');
+        }
+
+        // Додавання підсвічування клітинки
+        function highlightSquare(square) {
+            var $square = $('#board .square-' + square);
+            var background = '#a9a9a9';
+            if ($square.hasClass('black-3c85d')) {
+                background = '#696969';
+            }
+            $square.css('background', background);
+        }
+
+        function onDragStart(source, piece, position, orientation) {
+            if (game.game_over()) return false;
+
+            // Забороняємо рухати чужі фігури або ходити боту
+            if ((playerColor === 'w' && piece.search(/^b/) !== -1) ||
+                (playerColor === 'b' && piece.search(/^w/) !== -1) ||
+                (game.turn() !== playerColor)) {
+                return false;
+            }
+        }
+
+        function onDrop(source, target) {
+            removeHighlights();
+
+            var move = game.move({
+                from: source,
+                to: target,
+                promotion: 'q'
+            });
+
+            if (move === null) return 'snapback';
+
+            // Рахуємо хід
+            moveCount++;
+            $('#move-count').text(Math.ceil(moveCount / 2));
+
+            updateStatus();
+
+            // Якщо гра не закінчена, робить хід бот
+            if (!game.game_over()) {
+                window.setTimeout(makeBotMove, 250);
+            }
+        }
+
+        function onSnapEnd() {
+            board.position(game.fen());
+        }
+
+        function onMouseoverSquare(square, piece) {
+            var moves = game.moves({
+                square: square,
+                verbose: true
+            });
+
+            if (moves.length === 0) return;
+
+            highlightSquare(square);
+            for (var i = 0; i < moves.length; i++) {
+                highlightSquare(moves[i].to);
+            }
+        }
+
+        function onMouseoutSquare(square, piece) {
+            removeHighlights();
+        }
+
+        // Штучний інтелект (Бот)
+        function makeBotMove() {
+            var difficulty = $('#difficulty').val();
+            var move = null;
+
+            if (difficulty === 'easy') {
+                move = getRandomMove();
+            } else if (difficulty === 'medium') {
+                move = getMediumMove();
+            } else {
+                move = getBestMove(2); // Міні-пошук на 2 глибину
+            }
+
+            if (move) {
+                game.move(move);
+                moveCount++;
+                $('#move-count').text(Math.ceil(moveCount / 2));
+                board.position(game.fen());
+                updateStatus();
+            }
+        }
+
+        function getRandomMove() {
+            var moves = game.moves();
+            if (moves.length === 0) return null;
+            var randIdx = Math.floor(Math.random() * moves.length);
+            return moves[randIdx];
+        }
+
+        function getMediumMove() {
+            var moves = game.moves({ verbose: true });
+            if (moves.length === 0) return null;
+
+            // Шукаємо взяття фігур
+            for (var i = 0; i < moves.length; i++) {
+                if (moves[i].captured) {
+                    return moves[i];
+                }
+            }
+            return getRandomMove();
+        }
+
+        // Оцінка матеріалу для складного режиму
+        var pieceValues = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 1000 };
+        function evaluateBoard(boardState) {
+            var totalEvaluation = 0;
+            for (var r = 0; r < 8; r++) {
+                for (var c = 0; c < 8; c++) {
+                    var square = boardState[r][c];
+                    if (square) {
+                        var val = pieceValues[square.type];
+                        totalEvaluation += (square.color === 'w') ? val : -val;
+                    }
+                }
+            }
+            return totalEvaluation;
+        }
+
+        function minimax(depth, isMaximizing) {
+            if (depth === 0 || game.game_over()) {
+                return evaluateBoard(game.board());
+            }
+            var moves = game.moves();
+            if (isMaximizing) {
+                var maxEval = -9999;
+                for (var i = 0; i < moves.length; i++) {
+                    game.move(moves[i]);
+                    var evaluation = minimax(depth - 1, false);
+                    game.undo();
+                    maxEval = Math.max(maxEval, evaluation);
+                }
+                return maxEval;
+            } else {
+                var minEval = 9999;
+                for (var i = 0; i < moves.length; i++) {
+                    game.move(moves[i]);
+                    var evaluation = minimax(depth - 1, true);
+                    game.undo();
+                    minEval = Math.min(minEval, evaluation);
+                }
+                return minEval;
+            }
+        }
+
+        function getBestMove(depth) {
+            var moves = game.moves({ verbose: true });
+            if (moves.length === 0) return null;
+            var bestMove = null;
+            var bestValue = (game.turn() === 'w') ? -99999 : 99999;
+
+            for (var i = 0; i < moves.length; i++) {
+                game.move(moves[i]);
+                var value = minimax(depth - 1, game.turn() === 'w');
+                game.undo();
+                if (game.turn() === 'w') {
+                    if (value > bestValue) {
+                        bestValue = value;
+                        bestMove = moves[i];
+                    }
+                } else {
+                    if (value < bestValue) {
+                        bestValue = value;
+                        bestMove = moves[i];
+                    }
+                }
+            }
+            return bestMove || moves[0];
+        }
+
+        function updateStatus() {
+            var status = '';
+            var $statusEl = $('#status');
+            $statusEl.css('color', '#ffffff');
+
+            if (game.in_checkmate()) {
+                // Перевірка хто виграв
+                var winner = (game.turn() === 'w') ? 'black' : 'white';
+                if (winner === playerColor) {
+                    status = 'Ви Виграли!';
+                    $statusEl.css('color', '#2ecc71'); // Зелений
+                } else {
+                    status = 'Ви Програли!';
+                    $statusEl.css('color', '#e74c3c'); // Червоний
+                }
+            } else if (game.in_draw()) {
+                status = 'Нічия!';
+            } else {
+                status = (game.turn() === 'w') ? 'Хід білих' : 'Хід чорних';
+                if (game.in_check()) {
+                    status += ' (Шах!)';
+                }
+            }
+            $statusEl.text(status);
+        }
+
+        // Налаштування дошки
+        function initGame() {
+            playerColor = $('#player-color').val() === 'white' ? 'w' : 'b';
+            game.reset();
+            moveCount = 0;
+            $('#move-count').text('0');
+
+            var config = {
+                draggable: true,
+                position: 'start',
+                orientation: playerColor === 'w' ? 'white' : 'black',
+                onDragStart: onDragStart,
+                onDrop: onDrop,
+                onSnapEnd: onSnapEnd,
+                onMouseoverSquare: onMouseoverSquare,
+                onMouseoutSquare: onMouseoutSquare
+            };
+            
+            if (board) {
+                board.destroy();
+            }
+            board = Chessboard('board', config);
+            updateStatus();
+
+            // Якщо гравець обрав чорні, бот робить перший хід білими
+            if (playerColor === 'b') {
+                window.setTimeout(makeBotMove, 250);
+            }
+        }
+
+        $('#restart-btn').on('click', initGame);
+        $('#player-color').on('change', initGame);
+
+        // Старт гри при завантаженні
+        $(document).ready(function() {
+            initGame();
+        });
+    </script>
+</body>
+</html>
